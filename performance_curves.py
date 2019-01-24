@@ -3,6 +3,7 @@ import numpy as np
 from poseModels import HumanPoseModel
 from HumanPose.nnet.predict import argmax_pose_predict
 import matplotlib.pyplot as plt
+from imageio import imread
 
 
 # import json annotations as a dictionary
@@ -62,14 +63,18 @@ def get_xy_for(part, annotations):
 
 # calculate distances of output array of limb compared to ground truth
 # both arrays should be same length
-def calculate_distances(x_array, y_array, truth_x_array, truth_y_array, normalized=True):
+def calculate_distances(x_array, y_array, truth_x_array, truth_y_array, normalized=True, image_dim=None):
 
     distances = [np.hypot(abs(x1-x2), abs(y1-y2)) for x1, y1, x2, y2 in zip(x_array, y_array,
                                                                             truth_x_array, truth_y_array)]
     distances = np.array(distances)
 
-    if normalized:
-        distances = (distances - distances.min())/(distances.max() - distances.min())
+    if normalized and image_dim is not None:
+        # TODO: resolve how to normalize detection distance
+        for i in range(distances.shape[0]):
+            for j in range(distances.shape[1]):
+                distances[i, j] = distances[i, j]/np.hypot(image_dim[i][0]/2, image_dim[i][1]/2)
+        # distances = (distances - distances.min())/(distances.max() - distances.min())
     return distances
 
 
@@ -115,10 +120,13 @@ def main():
     # run session for each frame image annotated
     x_model = np.empty([len(frame_list), len(joint_list)])
     y_model = np.empty([len(frame_list), len(joint_list)])
+    image_dimensions = []
 
     for index, a_frame in enumerate(frame_list):
 
         scmap, locref = model.run_model_once(frames_path + a_frame)
+        image = imread(frames_path + a_frame, as_gray=True)
+        image_dimensions.append(image.shape)
 
         # Extract maximum scoring location from the heatmap, assume 1 person
         pose = argmax_pose_predict(scmap, locref, model.model_config.stride)
@@ -129,8 +137,8 @@ def main():
             y_model[index, joint_index] = pose[joint_index, 1]
 
     # now calculate distances
-    distances_r = calculate_distances(x_model, y_model, x_anno_r, y_anno_r)
-    distances_l = calculate_distances(x_model, y_model, x_anno_l, y_anno_l)
+    distances_r = calculate_distances(x_model, y_model, x_anno_r, y_anno_r, image_dim=image_dimensions)
+    distances_l = calculate_distances(x_model, y_model, x_anno_l, y_anno_l, image_dim=image_dimensions)
 
     # merge the best distance results
     distances = np.empty(distances_l.shape)
@@ -152,8 +160,8 @@ def main():
         ax.plot(distance_steps[joint_index], rates[joint_index], label=joint_name)
 
     ax.legend()
-    plt.show()
     plt.savefig('/home/babybrain/Escritorio/performances_bodyparts.png')
+    plt.show()
 
 
 if __name__ == '__main__':
