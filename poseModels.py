@@ -6,6 +6,7 @@ from HumanPose.dataset.pose_dataset import data_to_input
 import HumanPose.default_config as default
 from scipy.misc import imread
 import numpy as np
+import argparse
 
 
 class PoseModel(object):
@@ -16,16 +17,15 @@ class PoseModel(object):
 
         self.model_name = kwarget('model_name', None, **kwargs)
         self.model_config = kwarget('model_config', None, **kwargs)
-        self.config_path = kwarget('config_path', None, **kwargs)
         self.input_list = kwarget('input_list', None, **kwargs)
 
         self.load_config()
         self.load_model()
 
-    def load_config(self):
+    def load_config(self, **kwargs):
         NotImplementedError("load_config function not implemented in " + self.model_name)
 
-    def load_model(self):
+    def load_model(self, **kwargs):
         NotImplementedError("load_model function not implemented in " + self.model_name)
 
     def run_model(self):
@@ -40,7 +40,6 @@ class PoseModel(object):
         NotImplementedError("run_model_once not implemented in " + self.model_name)
 
     def calculate_confidence(self, **kwargs):
-        assert kwargs
         NotImplementedError("calculate_confidence function not implemented in " + self.model_name)
 
 
@@ -48,16 +47,15 @@ class HumanPoseModel(PoseModel):
 
     def __init__(self):
         name = 'HumanPose'
-        config = './HumanPose/config.yaml'
         self.inputs = None
         self.outputs = None
 
-        super().__init__(model_name=name, config_path=config)
+        super().__init__(model_name=name)
 
-    def load_config(self):
+    def load_config(self, config_path='./HumanPose/config.yaml', config_model=None):
 
         cfg = default.cfg
-        with open(self.config_path, 'r') as f:
+        with open(config_path, 'r') as f:
             yaml_config = EasyDict(yaml.load(f))
         merge_a_to_b(yaml_config, cfg)
         self.model_config = cfg
@@ -87,6 +85,35 @@ class HumanPoseModel(PoseModel):
             data = [x for x in scmap_part.flatten() if x > threshold]
             confidences.append(np.max(data))  # using max to explore results
         return confidences, all_joints_names
+
+
+class PoseEstimationModel(PoseModel):
+
+    def __init__(self):
+        name = 'PoseEstimation'
+        super().__init__(model_name=name)
+
+    def load_config(self, **kwargs):
+        description = kwarget('description', 'tf-pose-estimation run', **kwargs)
+        config = argparse.ArgumentParser(description=description)
+
+        image_path = kwarget('image_path', '', **kwargs)
+        config.add_argument('--image', type=str, default=image_path)
+
+        model_type = kwarget('model_type', 'cmu', **kwargs)
+        config.add_argument('--model', type=str, default=model_type, help='use "cmu" or "mobilenet_thin"')
+
+        resizing = kwarget('resize', '0x0', **kwargs)
+        config.add_argument('--resize', type=str, default=resizing,
+                            help='if provided, resize images before they are processed. default=0x0, '
+                                 'Recommends : 432x368 or 656x368 or 1312x736')
+        resize_ratio = kwarget('ratio', 1.0, **kwargs)
+        config.add_argument('--resize-out-ratio', type=float, default=resize_ratio,
+                            help='if provided, resize heatmaps before they are post-processed. default=1.0')
+        self.model_config = config.parse_args()
+
+    def load_model(self, **kwargs):
+        return
 
 
 # A stupid HumanPose function to merge dicts
