@@ -7,6 +7,8 @@ from imageio import imread
 
 
 # import json annotations as a dictionary
+# TODO: JSON processing should be done in mybabybrain-database!
+# TODO: Create a function that renames part names (faster this way than marking)
 def load_annotations(json_path):
 
     with open(json_path) as f:
