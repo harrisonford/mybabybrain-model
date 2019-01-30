@@ -4,7 +4,7 @@ from easydict import EasyDict
 from HumanPose.nnet.predict import setup_pose_prediction, extract_cnn_output
 from HumanPose.dataset.pose_dataset import data_to_input
 import HumanPose.default_config as default
-from scipy.misc import imread
+from scipy.misc import imread, imresize
 import numpy as np
 import argparse
 
@@ -12,12 +12,12 @@ import argparse
 class PoseModel(object):
 
     def __init__(self, **kwargs):
-
         self.session = kwarget('session', None, **kwargs)
 
         self.model_name = kwarget('model_name', None, **kwargs)
         self.model_config = kwarget('model_config', None, **kwargs)
         self.input_list = kwarget('input_list', None, **kwargs)
+        self.outputs = kwarget('output_array', [], **kwargs)
 
         self.load_config()
         self.load_model()
@@ -28,12 +28,13 @@ class PoseModel(object):
     def load_model(self, **kwargs):
         NotImplementedError("load_model function not implemented in " + self.model_name)
 
-    def run_model(self):
-
-        outputs = []
-        for input_data in self.input_list:
-            outputs.append(self.run_model_once(input_data))
-        return outputs
+    def run_model(self, verbose=False):
+        self.outputs = []
+        n_data = len(self.input_list)
+        for data_index, input_data in enumerate(self.input_list):
+            if verbose:
+                print("Processing input {}/{}".format(data_index, n_data))
+            self.outputs.append(self.run_model_once(input_data))
 
     def run_model_once(self, input_path):
         assert input_path
@@ -45,15 +46,12 @@ class PoseModel(object):
 
 class HumanPoseModel(PoseModel):
 
-    def __init__(self):
-        name = 'HumanPose'
-        self.inputs = None
-        self.outputs = None
+    def __init__(self, **kwargs):
+        self.internal_inputs = None
+        self.internal_outputs = None
+        super().__init__(model_name='HumanPose', **kwargs)
 
-        super().__init__(model_name=name)
-
-    def load_config(self, config_path='./HumanPose/config.yaml', config_model=None):
-
+    def load_config(self, config_path='./HumanPose/config.yaml'):
         cfg = default.cfg
         with open(config_path, 'r') as f:
             yaml_config = EasyDict(yaml.load(f))
@@ -61,30 +59,45 @@ class HumanPoseModel(PoseModel):
         self.model_config = cfg
 
     def load_model(self):
-        self.session, self.inputs, self.outputs = setup_pose_prediction(self.model_config)
+        self.session, self.internal_inputs, self.internal_outputs = setup_pose_prediction(self.model_config)
 
     def run_model_once(self, input_path):
         image = imread(input_path)
         image_batch = data_to_input(image)
-        output = self.session.run(self.outputs, feed_dict={self.inputs: image_batch})
+        output = self.session.run(self.internal_outputs, feed_dict={self.internal_inputs: image_batch})
         scmap, locref, _ = extract_cnn_output(output, self.model_config)
-        return scmap, locref
+        return [scmap, locref]
 
-    def calculate_confidence(self, scmap, threshold=0.2):
+    def calculate_confidence(self):
+        output_confidences = []
+        for an_output in self.outputs:
+            output_confidences.append(self.calculate_confidence_once(an_output))
+        return output_confidences
+
+    def calculate_confidence_once(self, an_output):
         # Get joints processed from id
         all_joints = self.model_config.all_joints
-        all_joints_names = self.model_config.all_joints_names
-
         confidences = []
         for pidx, part in enumerate(all_joints):
-            # Calculate the result map for a joint (pre-heatmap)
+            # calculate resulting map for this joint
+            scmap = an_output[0]
             scmap_part = np.sum(scmap[:, :, part], axis=2)
 
-            # For a part, we average every conf point higher than a threshold
             # TODO: Try out max or mean data, which one to use?
-            data = [x for x in scmap_part.flatten() if x > threshold]
-            confidences.append(np.max(data))  # using max to explore results
-        return confidences, all_joints_names
+            data = scmap_part.flatten()
+            confidences.append(np.max(data))
+        return confidences
+
+    def make_heatmaps_once(self, an_output):
+        heatmaps = []
+        for pidx, part in enumerate(self.model_config.all_joints):
+            scmap = an_output[0]
+            scmap_part = np.sum(scmap[:, :, part], axis=2)
+            # resize heatmap, it's eight times smaller
+            scmap_part = imresize(scmap_part, 8.0, interp='bicubic')
+            scmap_part = np.lib.pad(scmap_part, ((4, 0), (4, 0)), 'minimum')
+            heatmaps.append(scmap_part)
+        return heatmaps
 
 
 class PoseEstimationModel(PoseModel):
@@ -113,6 +126,7 @@ class PoseEstimationModel(PoseModel):
         self.model_config = config.parse_args()
 
     def load_model(self, **kwargs):
+        # TODO: follow with load model
         return
 
 
@@ -130,7 +144,7 @@ def merge_a_to_b(a, b):
         if type(v) is EasyDict:
             try:
                 merge_a_to_b(a[k], b[k])
-            except:
+            except ValueError:
                 print('Error under config key: {}'.format(k))
                 raise
         else:
