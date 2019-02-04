@@ -4,6 +4,9 @@ from easydict import EasyDict
 from HumanPose.nnet.predict import setup_pose_prediction, extract_cnn_output
 from HumanPose.dataset.pose_dataset import data_to_input
 import HumanPose.default_config as default
+from PoseEstimation.tf_pose import common
+from PoseEstimation.tf_pose.networks import model_wh, get_graph_path
+from PoseEstimation.tf_pose.estimator import TfPoseEstimator
 from scipy.misc import imread, imresize
 import numpy as np
 import argparse
@@ -33,14 +36,20 @@ class PoseModel(object):
         n_data = len(self.input_list)
         for data_index, input_data in enumerate(self.input_list):
             if verbose:
-                print("Processing input {}/{}".format(data_index, n_data))
+                print("Processing input {}/{} for model {}".format(data_index + 1, n_data, self.model_name))
             self.outputs.append(self.run_model_once(input_data))
 
     def run_model_once(self, input_path):
         assert input_path
         NotImplementedError("run_model_once not implemented in " + self.model_name)
 
-    def calculate_confidence(self, **kwargs):
+    def calculate_confidence(self):
+        output_confidences = []
+        for an_output in self.outputs:
+            output_confidences.append(self.calculate_confidence_once(an_output))
+        return output_confidences
+
+    def calculate_confidence_once(self, input_path):
         NotImplementedError("calculate_confidence function not implemented in " + self.model_name)
 
 
@@ -68,12 +77,6 @@ class HumanPoseModel(PoseModel):
         scmap, locref, _ = extract_cnn_output(output, self.model_config)
         return [scmap, locref]
 
-    def calculate_confidence(self):
-        output_confidences = []
-        for an_output in self.outputs:
-            output_confidences.append(self.calculate_confidence_once(an_output))
-        return output_confidences
-
     def calculate_confidence_once(self, an_output):
         # Get joints processed from id
         all_joints = self.model_config.all_joints
@@ -88,6 +91,7 @@ class HumanPoseModel(PoseModel):
             confidences.append(np.max(data))
         return confidences
 
+    # TODO: super heatmap functions?
     def make_heatmaps_once(self, an_output):
         heatmaps = []
         for pidx, part in enumerate(self.model_config.all_joints):
@@ -102,9 +106,11 @@ class HumanPoseModel(PoseModel):
 
 class PoseEstimationModel(PoseModel):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         name = 'PoseEstimation'
-        super().__init__(model_name=name)
+        self.estimator = None
+        self.target_size = None
+        super().__init__(model_name=name, **kwargs)
 
     def load_config(self, **kwargs):
         description = kwarget('description', 'tf-pose-estimation run', **kwargs)
@@ -120,14 +126,40 @@ class PoseEstimationModel(PoseModel):
         config.add_argument('--resize', type=str, default=resizing,
                             help='if provided, resize images before they are processed. default=0x0, '
                                  'Recommends : 432x368 or 656x368 or 1312x736')
-        resize_ratio = kwarget('ratio', 1.0, **kwargs)
+        resize_ratio = kwarget('ratio', 4.0, **kwargs)
         config.add_argument('--resize-out-ratio', type=float, default=resize_ratio,
-                            help='if provided, resize heatmaps before they are post-processed. default=1.0')
+                            help='if provided, resize heatmaps before they are post-processed. default=4.0')
         self.model_config = config.parse_args()
 
     def load_model(self, **kwargs):
-        # TODO: follow with load model
-        return
+        self.target_size = model_wh(self.model_config.resize)  # w, h
+        if self.target_size[0] == 0 or self.target_size[1] == 0:
+            target_size = (432, 368)
+        else:
+            target_size = self.target_size
+        self.estimator = TfPoseEstimator(get_graph_path(self.model_config.model), target_size=target_size)
+
+    def run_model_once(self, input_path):
+        # TODO: This read_img is a bad function to use
+        image = common.read_imgfile(input_path, None, None)
+        humans = self.estimator.inference(image,
+                                          resize_to_default=(self.target_size[0] > 0 and self.target_size[1] > 0),
+                                          upsample_size=self.model_config.resize_out_ratio)
+        return humans
+
+    def calculate_confidence_once(self, an_output):
+        confidence = []
+        for a_human in an_output:
+            human_confidence = []
+            # TODO: BodyParts is a dict, need to iterate correctly <- keep working here!! :D
+            for a_part in a_human.body_parts:
+                human_confidence.append(a_part.score)
+            confidence.append(human_confidence)
+        return confidence
+
+    def make_heatmaps_once(self, an_output):
+        assert self, an_output
+        NotImplementedError("TODO: Need to implement make_heatmaps_once in pose-est!")
 
 
 # A stupid HumanPose function to merge dicts
