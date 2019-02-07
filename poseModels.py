@@ -59,6 +59,7 @@ class HumanPoseModel(PoseModel):
         self.internal_inputs = None
         self.internal_outputs = None
         super().__init__(model_name='HumanPose', **kwargs)
+        self.joint_names = self.model_config.all_joints_names
 
     def load_config(self, config_path='./HumanPose/config.yaml'):
         cfg = default.cfg
@@ -81,7 +82,7 @@ class HumanPoseModel(PoseModel):
         # Get joints processed from id
         all_joints = self.model_config.all_joints
         confidences = []
-        for pidx, part in enumerate(all_joints):
+        for part in all_joints:
             # calculate resulting map for this joint
             scmap = an_output[0]
             scmap_part = np.sum(scmap[:, :, part], axis=2)
@@ -94,7 +95,7 @@ class HumanPoseModel(PoseModel):
     # TODO: super heatmap functions?
     def make_heatmaps_once(self, an_output):
         heatmaps = []
-        for pidx, part in enumerate(self.model_config.all_joints):
+        for part in self.model_config.all_joints:
             scmap = an_output[0]
             scmap_part = np.sum(scmap[:, :, part], axis=2)
             # resize heatmap, it's eight times smaller
@@ -111,6 +112,8 @@ class PoseEstimationModel(PoseModel):
         self.estimator = None
         self.target_size = None
         super().__init__(model_name=name, **kwargs)
+        # TODO: resolve joint names
+        # self.joint_names = MPIIPart()
 
     def load_config(self, **kwargs):
         description = kwarget('description', 'tf-pose-estimation run', **kwargs)
@@ -152,8 +155,8 @@ class PoseEstimationModel(PoseModel):
         for a_human in an_output:
             human_confidence = []
             # TODO: BodyParts is a dict, need to iterate correctly <- keep working here!! :D
-            for a_part in a_human.body_parts:
-                human_confidence.append(a_part.score)
+            for a_part in a_human.body_parts.items():
+                human_confidence.append(a_part[1].score)
             confidence.append(human_confidence)
         return confidence
 

@@ -14,7 +14,7 @@ def main(subsample=1, n_stop=24000,
     file_names = os.listdir(path)
     full_paths = [path + a_frame for num, a_frame in enumerate(file_names) if num % subsample == 0 and num <= n_stop]
 
-    model = poseModels.PoseEstimationModel(input_list=full_paths)
+    model = poseModels.HumanPoseModel(input_list=full_paths)
     model.run_model(verbose=True)
     confidences = model.calculate_confidence()
 
@@ -36,7 +36,7 @@ def main(subsample=1, n_stop=24000,
         left_canvas = grid.GridSpecFromSubplotSpec(4, 2, subplot_spec=outer_canvas[0])
         for num, a_heatmap in enumerate(heatmaps):
             ax = plt.Subplot(fig, left_canvas[num])
-            ax.set_title(model.model_config.all_joints_names[num])
+            ax.set_title(model.model_config.all_joints_names[num] + " = {0:.2f}".format(a_confidence[num]))
             ax.axis('off')
             ax.imshow(image, interpolation='bilinear')
             ax.imshow(a_heatmap, alpha=0.5, cmap='jet', interpolation='bilinear')
@@ -102,4 +102,4 @@ def main(subsample=1, n_stop=24000,
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=60)
+    main(subsample=1, n_stop=2400)
