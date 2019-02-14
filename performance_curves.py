@@ -1,9 +1,10 @@
 import json
 import numpy as np
-from poseModels import HumanPoseModel
+from poseModels import HumanPoseModel, PoseEstimationModel
 from HumanPose.nnet.predict import argmax_pose_predict
 import matplotlib.pyplot as plt
 from imageio import imread
+import tensorflow as tf
 
 
 # import json annotations as a dictionary
@@ -107,60 +108,97 @@ def main():
     annotation_path = '/home/babybrain/Escritorio/300145_via.json'
     frames_path = '/home/babybrain/Escritorio/300145/'
 
-    # get annotations for each frame
+    # get annotations for each frame using a part as reference
     annotations = load_annotations(annotation_path)
-    frame_list, _, _ = get_xy_for('r-elbow', annotations)
+    frame_list, _, _ = get_xy_for('l-elbow', annotations)
 
-    # get the x,y model prediction for each frame annotated
-    model = HumanPoseModel()
-    joint_list = model.model_config.all_joints_names
+    # use human model to get joint names to use
+    model_human = HumanPoseModel()
+    joint_list = model_human.model_config.all_joints_names
 
     # get x, y annotations
     _, x_anno_l, y_anno_l = get_xy_lr(annotations, joint_list, ignore_with='r-')
     _, x_anno_r, y_anno_r = get_xy_lr(annotations, joint_list, ignore_with='l-')
 
-    # run session for each frame image annotated
-    x_model = np.empty([len(frame_list), len(joint_list)])
-    y_model = np.empty([len(frame_list), len(joint_list)])
+    # run session for each frame image annotated for both models
+    x_human = np.empty([len(frame_list), len(joint_list)])
+    y_human = np.empty([len(frame_list), len(joint_list)])
+    x_pose = np.empty([len(frame_list), len(joint_list)])
+    y_pose = np.empty([len(frame_list), len(joint_list)])
     image_dimensions = []
 
+    # human pose
     for index, a_frame in enumerate(frame_list):
 
-        scmap, locref = model.run_model_once(frames_path + a_frame)
+        scmap, locref = model_human.run_model_once(frames_path + a_frame)
         image = imread(frames_path + a_frame, as_gray=True)
         image_dimensions.append(image.shape)
 
         # Extract maximum scoring location from the heatmap, assume 1 person
-        pose = argmax_pose_predict(scmap, locref, model.model_config.stride)
+        pose = argmax_pose_predict(scmap, locref, model_human.model_config.stride)
 
         for joint_index, joint_name in enumerate(joint_list):
 
-            x_model[index, joint_index] = pose[joint_index, 0]
-            y_model[index, joint_index] = pose[joint_index, 1]
+            x_human[index, joint_index] = pose[joint_index, 0]
+            y_human[index, joint_index] = pose[joint_index, 1]
+
+    # pose-est
+    tf.reset_default_graph()
+    model_pose = PoseEstimationModel()
+    for index, a_frame in enumerate(frame_list):
+
+        an_output = model_pose.run_model_once(frames_path + a_frame)
+        # TODO: resolve what to do when pose-est detects many humans
+        if len(an_output) > 1:  # then store only the first human
+            an_output = an_output[0]
+
+        body_parts = an_output.body_parts
+        for a_part in body_parts:
+            if a_part in model_pose.model_config.all_joints_list.keys():
+                part_true_index = model_pose.model_config.all_joints_list[a_part]
+                x_norm = body_parts[a_part].x
+                y_norm = body_parts[a_part].y
+                # TODO check xy order in dimensions
+                x = x_norm * image_dimensions[index][0]
+                y = y_norm * image_dimensions[index][1]
+                x_pose[index, part_true_index] = x
+                y_pose[index, part_true_index] = y
 
     # now calculate distances
-    distances_r = calculate_distances(x_model, y_model, x_anno_r, y_anno_r, image_dim=image_dimensions)
-    distances_l = calculate_distances(x_model, y_model, x_anno_l, y_anno_l, image_dim=image_dimensions)
+    distances_r_human = calculate_distances(x_human, y_human, x_anno_r, y_anno_r, image_dim=image_dimensions)
+    distances_l_human = calculate_distances(x_human, y_human, x_anno_l, y_anno_l, image_dim=image_dimensions)
+    distances_r_pose = calculate_distances(x_pose, y_pose, x_anno_r, y_anno_r, image_dim=image_dimensions)
+    distances_l_pose = calculate_distances(x_pose, y_pose, x_anno_l, y_anno_l, image_dim=image_dimensions)
 
     # merge the best distance results
-    distances = np.empty(distances_l.shape)
-    for i in range(distances.shape[0]):
-        for j in range(distances.shape[1]):
-            distances[i, j] = min(distances_l[i, j], distances_r[i, j])
+    # TODO: pose and human results should have same dimensions right?
+    distances_human = np.empty(distances_l_human.shape)
+    distances_pose = np.empty(distances_l_pose.shape)
+    for i in range(distances_human.shape[0]):
+        for j in range(distances_human.shape[1]):
+            distances_human[i, j] = min(distances_l_human[i, j], distances_r_human[i, j])
+            distances_pose[i, j] = min(distances_l_pose[i, j], distances_r_pose[i, j])
 
-    distance_steps, rates = detection_rate(distances, nsteps=50)
-    rates = rates*100
+    distance_steps_human, rates_human = detection_rate(distances_human, nsteps=50)
+    distance_steps_pose, rates_pose = detection_rate(distances_pose, nsteps=50)
+    rates_human = rates_human*100
+    rates_pose = rates_pose*100
+
+    # TODO: for now we'll plot average curves for both models, too much data !
+    average_distances_human = np.nanmean(distance_steps_human, axis=0)
+    average_distances_pose = np.nanmean(distance_steps_pose, axis=0)
+    average_ratio_human = np.nanmean(rates_human, axis=0)
+    average_ration_pose = np.nanmean(rates_pose, axis=0)
 
     # finally plot the graph
     fig, ax = plt.subplots()
     ax.set_xlabel('Normalized Distance')
     ax.set_ylabel('Detection %')
-    ax.set_title('Distance threshold vs Detection Ratio')
+    ax.set_title('Average Distance threshold vs Average Detection Ratio')
     ax.set_xlim([0, 0.5])
 
-    for joint_index, joint_name in enumerate(joint_list):
-        ax.plot(distance_steps[joint_index], rates[joint_index], label=joint_name)
-
+    ax.plot(average_distances_human, average_ratio_human, label='HumanPose')
+    ax.plot(average_distances_pose, average_ration_pose, label='PoseEst')
     ax.legend()
     plt.savefig('/home/babybrain/Escritorio/performances_bodyparts.png')
     plt.show()
