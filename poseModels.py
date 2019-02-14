@@ -113,9 +113,16 @@ class PoseEstimationModel(PoseModel):
         self.target_size = None
         super().__init__(model_name=name, **kwargs)
         # TODO: resolve joint names
-        # self.joint_names = MPIIPart()
+        self.generate_joint_list()
+
+    def generate_joint_list(self):
+        # TODO: This is not the complete data, check tf_pose/common.py
+        # ankle, knee, hip, wrist, elbow, shoulder, chin, forehead
+        joint_list = {13: 0, 12: 1, 11: 2, 7: 3, 6: 4, 5: 5, 1: 6, 15: 7}
+        self.model_config.all_joints_list = joint_list
 
     def load_config(self, **kwargs):
+
         description = kwarget('description', 'tf-pose-estimation run', **kwargs)
         config = argparse.ArgumentParser(description=description)
 
@@ -143,7 +150,7 @@ class PoseEstimationModel(PoseModel):
         self.estimator = TfPoseEstimator(get_graph_path(self.model_config.model), target_size=target_size)
 
     def run_model_once(self, input_path):
-        # TODO: This read_img is a bad function to use
+        # TODO: This read_img is a bad function to use (scipy image will be deprecated)
         image = common.read_imgfile(input_path, None, None)
         humans = self.estimator.inference(image,
                                           resize_to_default=(self.target_size[0] > 0 and self.target_size[1] > 0),
@@ -151,14 +158,23 @@ class PoseEstimationModel(PoseModel):
         return humans
 
     def calculate_confidence_once(self, an_output):
+        if len(an_output) == 0:  # we return nans
+            confidence = np.empty(len(self.model_config.all_joints_list))
+            confidence[:] = np.nan
+            return confidence
+
+        # if there's human we return their confidences
         confidence = []
         for a_human in an_output:
-            human_confidence = []
-            # TODO: BodyParts is a dict, need to iterate correctly <- keep working here!! :D
+            human_confidence = np.empty(len(self.model_config.all_joints_list))
+            human_confidence[:] = np.nan
             for a_part in a_human.body_parts.items():
-                human_confidence.append(a_part[1].score)
+                if a_part[0] in self.model_config.all_joints_list.keys():
+                    index = self.model_config.all_joints_list[a_part[0]]
+                    human_confidence[index] = a_part[1].score
             confidence.append(human_confidence)
-        return confidence
+        # TODO: we store the first human found in the picture, should generalize that in the future for multiperson
+        return confidence[0]
 
     def make_heatmaps_once(self, an_output):
         assert self, an_output
