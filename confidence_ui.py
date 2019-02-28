@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grid
+import cv2
 plt.rcParams.update({'font.size': 10})
 
 
@@ -12,9 +13,10 @@ def main(subsample=1, n_stop=24000,
          path='/home/babybrain/Escritorio/frames_seg_000790/',
          outpath='/home/babybrain/Escritorio/frames_seg_000790_results/'):
     # we can subsample files in case we want less but fast results, a value of 1 implies no subsample
-    file_names = os.listdir(path)
+    file_names = sorted(os.listdir(path))
     full_paths = [path + a_frame for num, a_frame in enumerate(file_names) if num % subsample == 0 and num <= n_stop]
 
+    # run models
     model_human = poseModels.HumanPoseModel(input_list=full_paths)
     model_human.run_model(verbose=True)
     confidences_human = model_human.calculate_confidence()
@@ -114,9 +116,25 @@ def main(subsample=1, n_stop=24000,
     ax.legend()
 
     fig.add_subplot(ax)
-    plt.savefig("{}{}".format(outpath, "0"), format='png')
+    plt.savefig("{}{}.png".format('/home/babybrain/Escritorio/', "0"), format='png')
     plt.close()
+
+    # finally create a sample video from all frames
+    frame_list = os.listdir(outpath)
+    average_frame = cv2.imread('/home/babybrain/Escritorio/0.png')
+    im_dim = (average_frame.shape[1], average_frame.shape[0])
+
+    video = cv2.VideoWriter('/home/babybrain/Escritorio/sample_video.avi', cv2.VideoWriter_fourcc(*'MJPG'), 30, im_dim)
+    for a_frame in frame_list:
+        frame = cv2.imread(outpath + a_frame)
+        video.write(frame)
+    # also write the average_frame many times
+    for i in range(30*10):
+        video.write(average_frame)
+    # release writer
+    cv2.destroyAllWindows()
+    video.release()
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=4)
+    main(subsample=1, n_stop=30*10)
