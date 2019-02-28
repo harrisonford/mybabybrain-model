@@ -161,8 +161,8 @@ def main():
                 # TODO check xy order in dimensions
                 x = x_norm * image_dimensions[index][0]
                 y = y_norm * image_dimensions[index][1]
-                x_pose[index, part_true_index] = x
-                y_pose[index, part_true_index] = y
+                x_pose[index, part_true_index] = y
+                y_pose[index, part_true_index] = x
 
     # now calculate distances
     distances_r_human = calculate_distances(x_human, y_human, x_anno_r, y_anno_r, image_dim=image_dimensions)
@@ -184,7 +184,32 @@ def main():
     rates_human = rates_human*100
     rates_pose = rates_pose*100
 
-    # TODO: for now we'll plot average curves for both models, too much data !
+    # plot all joints graph
+    # human
+    fig, ax = plt.subplots()
+    ax.set_xlabel('Normalized Distance')
+    ax.set_ylabel('Detection %')
+    ax.set_title('Performance HumanPose: Threshold vs Detection Rate')
+    ax.set_xlim([0, 1])
+    for joint_index, joint_name in enumerate(joint_list):
+        ax.plot(distance_steps_human[joint_index], rates_human[joint_index], label=joint_name)
+    ax.legend(loc='upper right')
+    plt.savefig('/home/babybrain/Escritorio/performances_all_bodyparts_human.png')
+    plt.close()
+
+    # pose-est
+    fig, ax = plt.subplots()
+    ax.set_xlabel('Normalized Distance')
+    ax.set_ylabel('Detection %')
+    ax.set_title('Performance PoseEst: Threshold vs Detection Rate')
+    ax.set_xlim([0, 1])
+    for joint_index, joint_name in enumerate(joint_list):
+        ax.plot(distance_steps_pose[joint_index], rates_pose[joint_index], label=joint_name)
+    ax.legend(loc='upper right')
+    plt.savefig('/home/babybrain/Escritorio/performances_all_bodyparts_pose.png')
+    plt.close()
+
+    # average performance of joints
     average_distances_human = np.nanmean(distance_steps_human, axis=0)
     average_distances_pose = np.nanmean(distance_steps_pose, axis=0)
     average_ratio_human = np.nanmean(rates_human, axis=0)
@@ -195,7 +220,7 @@ def main():
     ax.set_xlabel('Normalized Distance')
     ax.set_ylabel('Detection %')
     ax.set_title('Average Distance threshold vs Average Detection Ratio')
-    ax.set_xlim([0, 0.5])
+    ax.set_xlim([0, 1])
 
     ax.plot(average_distances_human, average_ratio_human, label='HumanPose')
     ax.plot(average_distances_pose, average_ration_pose, label='PoseEst')
