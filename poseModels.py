@@ -108,6 +108,7 @@ class HumanPoseModel(PoseModel):
 class PoseEstimationModel(PoseModel):
 
     def __init__(self, **kwargs):
+
         name = 'PoseEstimation'
         self.estimator = None
         self.target_size = None
