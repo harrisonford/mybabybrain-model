@@ -42,7 +42,7 @@ class Human:
     """
     body_parts: list of BodyPart
     """
-    __slots__ = ('body_parts', 'pairs', 'uidx_list', 'score')
+    __slots__ = ('body_parts', 'pairs', 'uidx_list', 'score', 'heatmaps')
 
     def __init__(self, pairs):
         self.pairs = []
@@ -51,6 +51,7 @@ class Human:
         for pair in pairs:
             self.add_pair(pair)
         self.score = 0.0
+        self.heatmaps = []
 
     @staticmethod
     def _get_uidx(part_idx, idx):
