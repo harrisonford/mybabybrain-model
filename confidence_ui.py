@@ -24,7 +24,7 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
         ax.set_title(part_names[num] + " = {0:.2f}".format(confidences[num]))
         ax.axis('off')
         ax.imshow(image_matrix, interpolation='bilinear')
-        if a_heatmap:
+        if a_heatmap.any():
             ax.imshow(a_heatmap, alpha=0.5, cmap='jet', interpolation='bilinear')
         else:  # warn about no joint detection
             warnings.warn("No heatmap found for joint {} in frame {} with model {}".format(
