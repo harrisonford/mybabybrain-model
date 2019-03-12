@@ -156,30 +156,40 @@ class PoseEstimationModel(PoseModel):
         humans = self.estimator.inference(image,
                                           resize_to_default=(self.target_size[0] > 0 and self.target_size[1] > 0),
                                           upsample_size=self.model_config.resize_out_ratio)
-        return humans
+        if not humans:
+            return None
+
+        # TODO: We store only one human, must generalize for multiperson
+        human = humans[0]
+        human.heatmaps = self.estimator.heatMat
+        return human
 
     def calculate_confidence_once(self, an_output):
-        if len(an_output) == 0:  # we return nans
+        if an_output is None:  # we return nans
             confidence = np.empty(len(self.model_config.all_joints_list))
             confidence[:] = np.nan
             return confidence
 
-        # if there's human we return their confidences
-        confidence = []
-        for a_human in an_output:
-            human_confidence = np.empty(len(self.model_config.all_joints_list))
-            human_confidence[:] = np.nan
-            for a_part in a_human.body_parts.items():
-                if a_part[0] in self.model_config.all_joints_list.keys():
-                    index = self.model_config.all_joints_list[a_part[0]]
-                    human_confidence[index] = a_part[1].score
-            confidence.append(human_confidence)
+        # if there's a human we return their confidences
+        human_confidence = np.empty(len(self.model_config.all_joints_list))
+        human_confidence[:] = np.nan
+        for a_part in an_output.body_parts.items():
+            if a_part[0] in self.model_config.all_joints_list.keys():
+                index = self.model_config.all_joints_list[a_part[0]]
+                human_confidence[index] = a_part[1].score
         # TODO: we store the first human found in the picture, should generalize that in the future for multiperson
-        return confidence[0]
+        return human_confidence
 
     def make_heatmaps_once(self, an_output):
-        assert self, an_output
-        NotImplementedError("TODO: Need to implement make_heatmaps_once in pose-est!")
+        heatmaps = [[] for _ in range(len(self.model_config.all_joints_list.keys()))]
+        for a_part in an_output.body_parts.items():
+            if a_part[0] in self.model_config.all_joints_list.keys():
+                index = self.model_config.all_joints_list[a_part[0]]
+                heatmap = an_output.heatmaps[:, :, a_part[0]]
+                # TODO: Check correct dimensions (important or not?)
+                heatmap = imresize(heatmap, 2.0, interp='bicubic')
+                heatmaps[index] = heatmap
+        return heatmaps
 
 
 # A stupid HumanPose function to merge dicts
