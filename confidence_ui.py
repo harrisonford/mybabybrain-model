@@ -6,6 +6,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grid
 import cv2
+import warnings
 plt.rcParams.update({'font.size': 10})
 
 
@@ -23,7 +24,13 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
         ax.set_title(part_names[num] + " = {0:.2f}".format(confidences[num]))
         ax.axis('off')
         ax.imshow(image_matrix, interpolation='bilinear')
-        ax.imshow(a_heatmap, alpha=0.5, cmap='jet', interpolation='bilinear')
+        if a_heatmap:
+            ax.imshow(a_heatmap, alpha=0.5, cmap='jet', interpolation='bilinear')
+        else:  # warn about no joint detection
+            warnings.warn("No heatmap found for joint {} in frame {} with model {}".format(
+                part_names[num], output_file, model_name
+            ))
+
         fig.add_subplot(ax)
 
     # plot confidences in second grid
@@ -163,7 +170,7 @@ def main(subsample=1, n_stop=24000,
         frame = cv2.imread(outpath + '/PoseEst/' + a_frame)
         video.write(frame)
     # also write the average_frame many times
-    for i in range(60 * 10):
+    for i in range(60 * 5):
         video.write(average_frame)
     # release writer
     cv2.destroyAllWindows()
@@ -171,4 +178,4 @@ def main(subsample=1, n_stop=24000,
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=2)
+    main(subsample=1, n_stop=64)
