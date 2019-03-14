@@ -87,7 +87,7 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
     n_groups = len(confidences)
     index = np.arange(n_groups)
     ax.bar(index, confidences, bar_width, alpha=opacity, color='b')
-    ax.set_ylim((0, 2))
+    ax.set_ylim((0, 1))
     ax.set_xlabel('Body-Part')
     ax.set_ylabel('Confidence Value')
     ax.set_title('Confidence Values for Each Joint')
@@ -200,7 +200,7 @@ def main(subsample=1, n_stop=24000,
     video = cv2.VideoWriter('{}sample_video_human.avi'.format(outpath),
                             cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
     for a_frame in frame_list:
-        frame = cv2.imread(outpath + '/HumanPose/' + a_frame)
+        frame = cv2.imread(a_frame)
         video.write(frame)
     # also write the average_frame many times
     for i in range(average_frames):
@@ -215,7 +215,7 @@ def main(subsample=1, n_stop=24000,
     video = cv2.VideoWriter('{}sample_video_pose.avi'.format(outpath),
                             cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
     for a_frame in frame_list:
-        frame = cv2.imread(outpath + '/PoseEst/' + a_frame)
+        frame = cv2.imread(a_frame)
         video.write(frame)
     # also write the average_frame many times
     for i in range(average_frames):
@@ -230,7 +230,7 @@ def main(subsample=1, n_stop=24000,
     video = cv2.VideoWriter('{}sample_video_both.avi'.format(outpath),
                             cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
     for a_frame in frame_list:
-        frame = cv2.imread(outpath + '/Both/' + a_frame)
+        frame = cv2.imread(a_frame)
         video.write(frame)
     # also write the average_frame many times
     for i in range(average_frames):
@@ -241,4 +241,4 @@ def main(subsample=1, n_stop=24000,
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=2)
+    main(subsample=1, n_stop=1)
