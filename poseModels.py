@@ -52,6 +52,9 @@ class PoseModel(object):
     def calculate_confidence_once(self, input_path):
         NotImplementedError("calculate_confidence function not implemented in " + self.model_name)
 
+    def make_heatmaps_once(self, an_output):
+        NotImplementedError("make_heatmaps_once not implemented in " + self.model_name)
+
 
 class HumanPoseModel(PoseModel):
 
@@ -78,7 +81,7 @@ class HumanPoseModel(PoseModel):
         scmap, locref, _ = extract_cnn_output(output, self.model_config)
         return [scmap, locref]
 
-    def calculate_confidence_once(self, an_output):
+    def calculate_confidence_once(self, an_output, threshold=0.1):
         # Get joints processed from id
         all_joints = self.model_config.all_joints
         confidences = []
@@ -89,7 +92,8 @@ class HumanPoseModel(PoseModel):
 
             # TODO: Try out max or mean data, which one to use?
             data = scmap_part.flatten()
-            confidences.append(np.max(data))
+            data = [a_value for a_value in data if a_value >= threshold]
+            confidences.append(np.mean(data))
         return confidences
 
     # TODO: super heatmap functions?
