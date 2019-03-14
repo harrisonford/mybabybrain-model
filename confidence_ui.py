@@ -10,6 +10,52 @@ import warnings
 plt.rcParams.update({'font.size': 10})
 
 
+def save_frame_result_dual(output_file, image_matrix, dual_heatmaps, dual_confidences, part_names, model_names):
+    # create plot canvas
+    fig = plt.figure(figsize=(12, 8))
+    fig.suptitle("Tracking and Confidence levels in a sample video ({} | {})".format(model_names[0], model_names[1]))
+    outer_canvas = grid.GridSpec(1, 2)
+
+    # plot heatmaps in first grid
+    left_canvas = grid.GridSpecFromSubplotSpec(4, 2, subplot_spec=outer_canvas[0])
+    for num, heatmap1 in enumerate(dual_heatmaps[0]):
+        heatmap2 = dual_heatmaps[1][num]
+        confidences1 = dual_confidences[0][num]
+        confidences2 = dual_confidences[1][num]
+        ax = plt.Subplot(fig, left_canvas[num])
+        ax.set_title(part_names[num] + " = {0:.2f} | {1:.2f}".format(confidences1, confidences2))
+        ax.axis('off')
+        ax.imshow(image_matrix, interpolation='bilinear')
+        if np.any(heatmap1) and np.any(heatmap2):
+            ax.imshow(heatmap1, alpha=0.5, cmap='jet', interpolation='bilinear')
+        else:  # warn about no joint detection
+            warnings.warn("No heatmap found for joint {} in frame {} with model {}".format(
+                part_names[num], output_file, model_names[0]
+            ))
+
+        fig.add_subplot(ax)
+
+    # plot confidences in second grid (dual)
+    right_canvas = grid.GridSpecFromSubplotSpec(1, 1, subplot_spec=outer_canvas[1])
+    ax = plt.Subplot(fig, right_canvas[0])
+    bar_width = 0.35
+    opacity = 0.4
+    n_groups = len(dual_confidences[0])
+    index = np.arange(n_groups)
+    ax.bar(index - bar_width/2, dual_confidences[0], bar_width, alpha=opacity, color='b', label=model_names[0])
+    ax.bar(index + bar_width/2, dual_confidences[1], bar_width, alpha=opacity, color='r', label=model_names[1])
+    ax.set_ylim((0, 1))
+    ax.set_xlabel('Body-Part')
+    ax.set_ylabel('Confidence Value')
+    ax.set_title('Confidence Values for Each Joint')
+    ax.set_xticks(index)
+    ax.set_xticklabels(part_names)
+    ax.legend()
+    fig.add_subplot(ax)
+    plt.savefig(output_file, format='png')
+    plt.close()
+
+
 def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_names, model_name):
 
     # create plot canvas
@@ -88,12 +134,15 @@ def main(subsample=1, n_stop=24000,
         # save result frames
         outpath_human = outpath + 'HumanPose/' + a_file
         outpath_pose = outpath + 'PoseEst/' + a_file
+        outpath_dual = outpath + 'Both/' + a_file
 
         print("saving frame {}".format(a_file))
         save_frame_result(outpath_human, image, heatmaps_human, conf_human,
                           model_human.joint_names, model_human.model_name)
         save_frame_result(outpath_pose, image, heatmaps_pose, conf_pose,
                           model_human.joint_names, model_pose.model_name)
+        save_frame_result_dual(outpath_dual, image, [heatmaps_human, heatmaps_pose], [conf_human, conf_pose],
+                               model_human.joint_names, [model_human.model_name, model_pose.model_name])
 
     # plot final image
     fig = plt.figure(figsize=(12, 8))
@@ -130,7 +179,7 @@ def main(subsample=1, n_stop=24000,
     ax.bar(index + bar_width, confidences_mean, bar_width, alpha=opacity, color='r', yerr=confidences_std,
            error_kw=error_config, label='Pose-Est')
 
-    ax.set_ylim(0, 2)
+    ax.set_ylim(0, 1)
     ax.set_xlabel('Body-Part')
     ax.set_ylabel('Confidence Value')
     ax.set_title('Mean Confidence Values in one video')
@@ -143,34 +192,48 @@ def main(subsample=1, n_stop=24000,
     plt.close()
 
     # finally create a sample video from all frames for each model
+    average_frames = 300
     # human
-    frame_list = sorted(os.listdir(outpath + '/HumanPose/'))
+    frame_list = [outpath + 'HumanPose/' + a_file for a_file in file_names]
     average_frame = cv2.imread(outpath + '0.png')
     im_dim = (average_frame.shape[1], average_frame.shape[0])
-
     video = cv2.VideoWriter('{}sample_video_human.avi'.format(outpath),
                             cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
     for a_frame in frame_list:
         frame = cv2.imread(outpath + '/HumanPose/' + a_frame)
         video.write(frame)
     # also write the average_frame many times
-    for i in range(60*10):
+    for i in range(average_frames):
         video.write(average_frame)
     # release writer
     cv2.destroyAllWindows()
     video.release()
 
     # pose
-    frame_list = sorted(os.listdir(outpath + '/PoseEst/'))
+    frame_list = [outpath + 'PoseEst/' + a_file for a_file in file_names]
     im_dim = (average_frame.shape[1], average_frame.shape[0])
-
     video = cv2.VideoWriter('{}sample_video_pose.avi'.format(outpath),
                             cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
     for a_frame in frame_list:
         frame = cv2.imread(outpath + '/PoseEst/' + a_frame)
         video.write(frame)
     # also write the average_frame many times
-    for i in range(60 * 5):
+    for i in range(average_frames):
+        video.write(average_frame)
+    # release writer
+    cv2.destroyAllWindows()
+    video.release()
+
+    # both
+    frame_list = [outpath + 'Both/' + a_file for a_file in file_names]
+    im_dim = (average_frame.shape[1], average_frame.shape[0])
+    video = cv2.VideoWriter('{}sample_video_both.avi'.format(outpath),
+                            cv2.VideoWriter_fourcc(*'MJPG'), 60, im_dim)
+    for a_frame in frame_list:
+        frame = cv2.imread(outpath + '/Both/' + a_frame)
+        video.write(frame)
+    # also write the average_frame many times
+    for i in range(average_frames):
         video.write(average_frame)
     # release writer
     cv2.destroyAllWindows()
@@ -178,4 +241,4 @@ def main(subsample=1, n_stop=24000,
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=64)
+    main(subsample=1, n_stop=2)
