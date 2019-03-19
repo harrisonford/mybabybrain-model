@@ -29,9 +29,7 @@ def save_frame_result_dual(output_file, image_matrix, dual_heatmaps, dual_confid
         if np.any(heatmap1) and np.any(heatmap2):
             ax.imshow(heatmap1, alpha=0.5, cmap='jet', interpolation='bilinear')
         else:  # warn about no joint detection
-            warnings.warn("No heatmap found for joint {} in frame {} with model {}".format(
-                part_names[num], output_file, model_names[0]
-            ))
+            warnings.warn("No heatmap found for joint {} in frame {}".format(part_names[num], output_file))
 
         fig.add_subplot(ax)
 
