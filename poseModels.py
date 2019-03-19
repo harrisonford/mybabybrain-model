@@ -96,7 +96,6 @@ class HumanPoseModel(PoseModel):
             confidences.append(np.mean(data))
         return confidences
 
-    # TODO: super heatmap functions?
     def make_heatmaps_once(self, an_output):
         heatmaps = []
         for part in self.model_config.all_joints:
@@ -121,9 +120,11 @@ class PoseEstimationModel(PoseModel):
         self.generate_joint_list()
 
     def generate_joint_list(self):
-        # TODO: This is not the complete data, check tf_pose/common.py
+        # TODO: check tf_pose/common.py for Coco vs MPII parts
+        # TODO: changed this list, have to change usage inside class!
         # ankle, knee, hip, wrist, elbow, shoulder, chin, forehead
-        joint_list = {13: 0, 12: 1, 11: 2, 7: 3, 6: 4, 5: 5, 1: 6, 15: 7}
+        joint_list = {(13, 10): 0, (12, 9): 1, (11, 8): 2, (7, 4): 3, (6, 3): 4, (5, 2): 5, (1, ): 6, (15, 14): 7}
+        # joint_list = {13: 0, 12: 1, 11: 2, 7: 3, 6: 4, 5: 5, 1: 6, 15: 7}
         self.model_config.all_joints_list = joint_list
 
     def load_config(self, **kwargs):
@@ -176,23 +177,25 @@ class PoseEstimationModel(PoseModel):
 
         # if there's a human we return their confidences
         human_confidence = np.empty(len(self.model_config.all_joints_list))
-        human_confidence[:] = np.nan
+        human_confidence[:] = 0
         for a_part in an_output.body_parts.items():
-            if a_part[0] in self.model_config.all_joints_list.keys():
-                index = self.model_config.all_joints_list[a_part[0]]
-                human_confidence[index] = a_part[1].score
+            real_indexes = [values for keys, values in self.model_config.all_joints_list.items() if a_part[0] in keys]
+            for an_index in real_indexes:
+                human_confidence[an_index] = max(a_part[1].score, human_confidence[an_index])  # store best from L-R
         # TODO: we store the first human found in the picture, should generalize that in the future for multiperson
         return human_confidence
 
     def make_heatmaps_once(self, an_output):
-        heatmaps = [[] for _ in range(len(self.model_config.all_joints_list.keys()))]
-        for a_part in an_output.body_parts.items():
-            if a_part[0] in self.model_config.all_joints_list.keys():
-                index = self.model_config.all_joints_list[a_part[0]]
-                heatmap = an_output.heatmaps[:, :, a_part[0]]
+        map_dimensions = an_output.heatmaps[:, :, 0].shape
+        map_dimensions = [2 * a_dim for a_dim in map_dimensions]  # heatmaps are half the original size
+        heatmaps = [np.zeros(map_dimensions) for _ in range(len(self.model_config.all_joints_list.values()))]
+        for a_part in an_output.body_parts.keys():
+            real_indexes = [values for keys, values in self.model_config.all_joints_list.items() if a_part in keys]
+            for an_index in real_indexes:
+                heatmap = an_output.heatmaps[:, :, a_part]
                 # TODO: Check correct dimensions (important or not?)
                 heatmap = imresize(heatmap, 2.0, interp='bicubic')
-                heatmaps[index] = heatmap
+                heatmaps[an_index] = heatmaps[an_index] + heatmap  # we add left + right heatmaps
         return heatmaps
 
 
