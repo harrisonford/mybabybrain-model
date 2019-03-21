@@ -181,7 +181,11 @@ class PoseEstimationModel(PoseModel):
         for a_part in an_output.body_parts.items():
             real_indexes = [values for keys, values in self.model_config.all_joints_list.items() if a_part[0] in keys]
             for an_index in real_indexes:
-                human_confidence[an_index] = max(a_part[1].score, human_confidence[an_index])  # store best from L-R
+                best_confidence = max(a_part[1].score, human_confidence[an_index])
+                if human_confidence[an_index] > 0 and best_confidence == a_part[1].score:  # we're storing R side
+                    human_confidence[an_index] = - best_confidence
+                else:
+                    human_confidence[an_index] = best_confidence  # L side (comes first and R last)
         # TODO: we store the first human found in the picture, should generalize that in the future for multiperson
         return human_confidence
 

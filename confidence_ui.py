@@ -40,8 +40,11 @@ def save_frame_result_dual(output_file, image_matrix, dual_heatmaps, dual_confid
     opacity = 0.4
     n_groups = len(dual_confidences[0])
     index = np.arange(n_groups)
-    ax.bar(index - bar_width/2, dual_confidences[0], bar_width, alpha=opacity, color='b', label=model_names[0])
-    ax.bar(index + bar_width/2, dual_confidences[1], bar_width, alpha=opacity, color='r', label=model_names[1])
+    # TODO: np.absolute to manage L-R for pose-estimation model, should do better
+    ax.bar(index - bar_width/2, np.absolute(dual_confidences[0]), bar_width, alpha=opacity,
+           color='b', label=model_names[0])
+    ax.bar(index + bar_width/2, np.absolute(dual_confidences[1]), bar_width, alpha=opacity,
+           color='r', label=model_names[1])
     ax.set_ylim((0, 1))
     ax.set_xlabel('Body-Part')
     ax.set_ylabel('Confidence Value')
@@ -84,7 +87,7 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
     opacity = 0.4
     n_groups = len(confidences)
     index = np.arange(n_groups)
-    ax.bar(index, confidences, bar_width, alpha=opacity, color='b')
+    ax.bar(index, np.absolute(confidences), bar_width, alpha=opacity, color='b')  # TODO: np.abs because L-R on PoseEst
     ax.set_ylim((0, 1))
     ax.set_xlabel('Body-Part')
     ax.set_ylabel('Confidence Value')
@@ -160,7 +163,7 @@ def main(subsample=1, n_stop=24000,
     ax = plt.Subplot(fig, right_canvas[0])
 
     # human
-    confidences = np.array(confidences_human)
+    confidences = np.absolute(np.array(confidences_human))
     confidences_mean = np.nanmean(confidences, axis=0)
     confidences_std = np.nanstd(confidences, axis=0)
     bar_width = 0.35
@@ -171,7 +174,7 @@ def main(subsample=1, n_stop=24000,
     ax.bar(index, confidences_mean, bar_width, alpha=opacity, color='b', yerr=confidences_std,
            error_kw=error_config, label='Human-Pose')
     # pose-est
-    confidences = np.array(confidences_pose)
+    confidences = np.absolute(np.array(confidences_pose))
     confidences_mean = np.nanmean(confidences, axis=0)
     confidences_std = np.nanstd(confidences, axis=0)
     ax.bar(index + bar_width, confidences_mean, bar_width, alpha=opacity, color='r', yerr=confidences_std,
@@ -239,4 +242,4 @@ def main(subsample=1, n_stop=24000,
 
 
 if __name__ == '__main__':
-    main(subsample=1, n_stop=1)
+    main(subsample=1, n_stop=4)
