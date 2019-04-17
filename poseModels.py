@@ -1,7 +1,7 @@
 from qol import kwarget
 import yaml
 from easydict import EasyDict
-from HumanPose.nnet.predict import setup_pose_prediction, extract_cnn_output
+from HumanPose.nnet.predict import setup_pose_prediction, extract_cnn_output, argmax_pose_predict
 from HumanPose.dataset.pose_dataset import data_to_input
 import HumanPose.default_config as default
 from PoseEstimation.tf_pose import common
@@ -10,6 +10,7 @@ from PoseEstimation.tf_pose.estimator import TfPoseEstimator
 from scipy.misc import imread, imresize
 import numpy as np
 import argparse
+import json
 
 
 class PoseModel(object):
@@ -54,6 +55,10 @@ class PoseModel(object):
 
     def make_heatmaps_once(self, an_output):
         NotImplementedError("make_heatmaps_once not implemented in " + self.model_name)
+
+    def save_as_coco_result(self, output_file):
+        NotImplementedError("save_as_coco_result not implemented in " + self.model_name)
+        return output_file
 
 
 class HumanPoseModel(PoseModel):
@@ -107,6 +112,29 @@ class HumanPoseModel(PoseModel):
             heatmaps.append(scmap_part)
         return heatmaps
 
+    def save_as_coco_result(self, output_file):
+        output_data = []
+        for index, an_output in enumerate(self.outputs):
+            scmap, locref = an_output
+            pose = argmax_pose_predict(scmap, locref, self.model_config.stride)
+            category_id = 1
+            score = 0
+            image_id = self.input_list[index].split('_')  # TODO: not completely generic split (eg: '\')
+            image_id = image_id.pop()
+            image_id = int(image_id[:-4])
+            keypoints_vector = np.zeros(len(self.model_config.all_joints_names)*3, dtype=int)
+            for num in range(len(self.joint_names)):
+                # TODO: This is not the right order! Check order in vector
+                position = num * 3
+                keypoints_vector[position] = int(pose[num, 0])
+                keypoints_vector[position + 1] = int(pose[num, 1])
+                keypoints_vector[position + 2] = 2
+            data = dict(category_id=category_id, score=score, keypoints=keypoints_vector.tolist(), image_id=image_id)
+            output_data.append(data)
+        with open(output_file, 'w') as outfile:
+            json.dump(output_data, outfile)
+        return output_file
+
 
 class PoseEstimationModel(PoseModel):
 
@@ -123,9 +151,13 @@ class PoseEstimationModel(PoseModel):
         # TODO: check tf_pose/common.py for Coco vs MPII parts
         # TODO: changed this list, have to change usage inside class!
         # ankle, knee, hip, wrist, elbow, shoulder, chin, forehead
-        joint_list = {(13, 10): 0, (12, 9): 1, (11, 8): 2, (7, 4): 3, (6, 3): 4, (5, 2): 5, (1, ): 6, (15, 14): 7}
+        self.model_config.all_joints_list = {(13, 10): 0, (12, 9): 1, (11, 8): 2, (7, 4): 3, (6, 3): 4,
+                                             (5, 2): 5, (1, ): 6, (15, 14): 7}
         # joint_list = {13: 0, 12: 1, 11: 2, 7: 3, 6: 4, 5: 5, 1: 6, 15: 7}
-        self.model_config.all_joints_list = joint_list
+        self.model_config.all_joints_names = ['nose', 'neck', 'right_shoulder', 'right_elbow', 'right_wrist',
+                                              'left_shoulder', 'left_elbow', 'left_wrist', 'right_hip', 'right_knee',
+                                              'right_ankle', 'left_hip', 'left_knee', 'left_ankle', 'right_eye',
+                                              'left_eye', 'right_ear', 'left_ear', 'background']
 
     def load_config(self, **kwargs):
 
@@ -164,8 +196,13 @@ class PoseEstimationModel(PoseModel):
         if not humans:
             return None
 
-        # TODO: We store only one human, must generalize for multiperson
-        human = humans[0]
+        # TODO: We store best scoring human, must generalize for multiperson
+        best_score = -1
+        human = None
+        for a_human in humans:
+            if a_human.score > best_score:
+                human = a_human
+                best_score = a_human.score
         human.heatmaps = self.estimator.heatMat
         return human
 
@@ -201,6 +238,35 @@ class PoseEstimationModel(PoseModel):
                 heatmap = imresize(heatmap, 2.0, interp='bicubic')
                 heatmaps[an_index] = heatmaps[an_index] + heatmap  # we add left + right heatmaps
         return heatmaps
+
+    def save_as_coco_result(self, output_file):
+        coco_parts = dict(nose=0, right_shoulder=1, right_elbow=2, right_wrist=3, left_shoulder=4, left_elbow=5,
+                          left_wrist=6, right_hip=7, right_knee=8, right_ankle=9, left_hip=10, left_knee=11,
+                          left_ankle=12, right_eye=13, left_eye=14, right_ear=15, left_ear=16)
+        output_data = []
+        for index, an_output in enumerate(self.outputs):
+            main_person = an_output
+            category_id = 1
+            score = main_person.score
+            image_id = self.input_list[index].split('_')  # TODO: non generic way of getting frame number
+            image_id = image_id.pop()
+            image_id = int(image_id[:-4])
+            resize_ratio = self.model_config.resize_out_ratio
+            x_dim = an_output.heatmaps.shape[0] * resize_ratio
+            y_dim = an_output.heatmaps.shape[1] * resize_ratio
+            keypoints_vector = np.zeros(len(coco_parts.keys())*3, dtype=int)
+            # TODO: this keypoint vector must match via2coco dict (same in other model)
+            for key in main_person.body_parts.keys():
+                position = key*3
+                body = main_person.body_parts[key]
+                # TODO wrong x-y assign?
+                keypoints_vector[position] = int(body.y * y_dim)
+                keypoints_vector[position + 1] = int(body.x * x_dim)
+                keypoints_vector[position + 2] = 2
+            data = dict(category_id=category_id, score=score, keypoints=keypoints_vector.tolist(), image_id=image_id)
+            output_data.append(data)
+        with open(output_file, 'w') as outfile:
+            json.dump(output_data, outfile)
 
 
 # A stupid HumanPose function to merge dicts
