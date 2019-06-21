@@ -20,6 +20,7 @@ if __name__ == '__main__':
     for a_folder in folder_list:
         image_list = sorted(os.listdir(a_folder))
         for an_image in image_list:
+            print("Computing: {}".format(an_image))
             data = [None for _ in range(len(columns))]  # type: List[object]
             data[0] = a_folder + an_image  # file directory
 
