@@ -213,7 +213,7 @@ def main():
     average_distances_human = np.nanmean(distance_steps_human, axis=0)
     average_distances_pose = np.nanmean(distance_steps_pose, axis=0)
     average_ratio_human = np.nanmean(rates_human, axis=0)
-    average_ration_pose = np.nanmean(rates_pose, axis=0)
+    average_ratio_pose = np.nanmean(rates_pose, axis=0)
 
     # finally plot the graph
     fig, ax = plt.subplots()
@@ -223,10 +223,12 @@ def main():
     ax.set_xlim([0, 1])
 
     ax.plot(average_distances_human, average_ratio_human, label='HumanPose')
-    ax.plot(average_distances_pose, average_ration_pose, label='PoseEst')
+    ax.plot(average_distances_pose, average_ratio_pose, label='PoseEst')
     ax.legend()
     plt.savefig('/home/babybrain/Escritorio/performances_bodyparts.png')
     plt.show()
+    print("mAP HumanPose = {}".format(average_ratio_human[np.round(len(average_ratio_human)/2)]))
+    print("mAP PoseEst = {}".format(average_ratio_pose[np.round(len(average_ratio_pose)/2)]))
 
 
 if __name__ == '__main__':
