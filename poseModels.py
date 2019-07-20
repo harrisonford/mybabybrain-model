@@ -251,13 +251,16 @@ class PoseEstimationModel(PoseModel):
             image_id = self.input_list[index].split('_')  # TODO: non generic way of getting frame number
             image_id = image_id.pop()
             image_id = int(image_id[:-4])
-            resize_ratio = self.model_config.resize_out_ratio
+            # resize_ratio = self.model_config.resize_out_ratio
+            resize_ratio = 2.0  # TODO: Resize ration really is sqrt(real_ratio) for now hardcoded
             x_dim = an_output.heatmaps.shape[0] * resize_ratio
             y_dim = an_output.heatmaps.shape[1] * resize_ratio
             keypoints_vector = np.zeros(len(coco_parts.keys())*3, dtype=int)
             # TODO: this keypoint vector must match via2coco dict (same in other model)
             for key in main_person.body_parts.keys():
-                position = key*3
+                if key >= len(coco_parts.keys()):  # for example background is ignored
+                    continue
+                position = key * 3
                 body = main_person.body_parts[key]
                 # TODO wrong x-y assign?
                 keypoints_vector[position] = int(body.y * y_dim)
