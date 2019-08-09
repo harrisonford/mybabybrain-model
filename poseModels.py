@@ -20,7 +20,7 @@ class PoseModel(object):
 
         self.model_name = kwarget('model_name', None, **kwargs)
         self.model_config = kwarget('model_config', None, **kwargs)
-        self.input_list = kwarget('input_list', None, **kwargs)
+        self.input_list = kwarget('input_list', [], **kwargs)
         self.outputs = kwarget('output_array', [], **kwargs)
 
         self.load_config()
@@ -44,6 +44,10 @@ class PoseModel(object):
         assert input_path
         NotImplementedError("run_model_once not implemented in " + self.model_name)
 
+    def _run_model_once(self, an_image):
+        assert an_image
+        NotImplementedError("_run_model_once not implemented in " + self.model_name)
+
     def calculate_confidence(self):
         output_confidences = []
         for an_output in self.outputs:
@@ -56,7 +60,7 @@ class PoseModel(object):
     def make_heatmaps_once(self, an_output):
         NotImplementedError("make_heatmaps_once not implemented in " + self.model_name)
 
-    def save_as_coco_result(self, output_file):
+    def save_as_coco_result(self, output_file, id_vector=None):
         NotImplementedError("save_as_coco_result not implemented in " + self.model_name)
         return output_file
 
@@ -79,12 +83,15 @@ class HumanPoseModel(PoseModel):
     def load_model(self):
         self.session, self.internal_inputs, self.internal_outputs = setup_pose_prediction(self.model_config)
 
-    def run_model_once(self, input_path):
-        image = imread(input_path)
-        image_batch = data_to_input(image)
+    def _run_model_once(self, an_image):
+        image_batch = data_to_input(an_image)
         output = self.session.run(self.internal_outputs, feed_dict={self.internal_inputs: image_batch})
         scmap, locref, _ = extract_cnn_output(output, self.model_config)
         return [scmap, locref]
+
+    def run_model_once(self, input_path):
+        image = imread(input_path)
+        return self._run_model_once(image)
 
     def calculate_confidence_once(self, an_output, threshold=0.1):
         # Get joints processed from id
@@ -112,16 +119,19 @@ class HumanPoseModel(PoseModel):
             heatmaps.append(scmap_part)
         return heatmaps
 
-    def save_as_coco_result(self, output_file):
+    def save_as_coco_result(self, output_file, id_vector=None):
         output_data = []
         for index, an_output in enumerate(self.outputs):
             scmap, locref = an_output
             pose = argmax_pose_predict(scmap, locref, self.model_config.stride)
             category_id = 1
             score = 0
-            image_id = self.input_list[index].split('_')  # TODO: not completely generic split (eg: '\')
-            image_id = image_id.pop()
-            image_id = int(image_id[:-4])
+            if id_vector:
+                image_id = id_vector[index]
+            else:
+                image_id = self.input_list[index].split('_')  # TODO: not completely generic split (eg: '\')
+                image_id = image_id.pop()
+                image_id = int(image_id[:-4])
             keypoints_vector = np.zeros(len(self.model_config.all_joints_names)*3, dtype=int)
             for num in range(len(self.joint_names)):
                 # TODO: This is not the right order! Check order in vector
@@ -190,7 +200,10 @@ class PoseEstimationModel(PoseModel):
     def run_model_once(self, input_path):
         # TODO: This read_img is a bad function to use (scipy image will be deprecated)
         image = common.read_imgfile(input_path, None, None)
-        humans = self.estimator.inference(image,
+        return self._run_model_once(image)
+
+    def _run_model_once(self, an_image):
+        humans = self.estimator.inference(an_image,
                                           resize_to_default=(self.target_size[0] > 0 and self.target_size[1] > 0),
                                           upsample_size=self.model_config.resize_out_ratio)
         if not humans:
@@ -239,7 +252,7 @@ class PoseEstimationModel(PoseModel):
                 heatmaps[an_index] = heatmaps[an_index] + heatmap  # we add left + right heatmaps
         return heatmaps
 
-    def save_as_coco_result(self, output_file):
+    def save_as_coco_result(self, output_file, id_vector=None):
         coco_parts = dict(nose=0, right_shoulder=1, right_elbow=2, right_wrist=3, left_shoulder=4, left_elbow=5,
                           left_wrist=6, right_hip=7, right_knee=8, right_ankle=9, left_hip=10, left_knee=11,
                           left_ankle=12, right_eye=13, left_eye=14, right_ear=15, left_ear=16)
@@ -248,9 +261,12 @@ class PoseEstimationModel(PoseModel):
             main_person = an_output
             category_id = 1
             score = main_person.score
-            image_id = self.input_list[index].split('_')  # TODO: non generic way of getting frame number
-            image_id = image_id.pop()
-            image_id = int(image_id[:-4])
+            if id_vector:
+                image_id = id_vector[index]
+            else:
+                image_id = self.input_list[index].split('_')  # TODO: non generic way of getting frame number
+                image_id = image_id.pop()
+                image_id = int(image_id[:-4])
             # resize_ratio = self.model_config.resize_out_ratio
             resize_ratio = 2.0  # TODO: Resize ration really is sqrt(real_ratio) for now hardcoded
             x_dim = an_output.heatmaps.shape[0] * resize_ratio
