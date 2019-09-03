@@ -136,7 +136,7 @@ def detection_rate(distance_matrix, nsteps=10, normalized=True):
 
 
 # given the ground-truth and detection compute the delta difference error
-def compute_error(dt_path, gt_path, normalize=None):
+def compute_error(dt_path, gt_path, normalize=None, threshold=0.250):
     dt = load_annotations(dt_path)
     gt = load_annotations(gt_path)
 
@@ -146,7 +146,7 @@ def compute_error(dt_path, gt_path, normalize=None):
     for gt_sample in gt['annotations']:
         # find the dt_sample associated to the gt_sample
         for a_dt in dt:
-            if a_dt['image_id'] == gt_sample['id']:
+            if np.abs(a_dt['image_id'] - gt_sample['id']) <= threshold:
                 dt_sample = a_dt
                 dt_keypoints = np.array(dt_sample['keypoints'])
                 gt_keypoints = np.array(gt_sample['keypoints'])

@@ -10,11 +10,11 @@ from pycocotools.cocoeval import COCOeval
 
 if __name__ == '__main__':
     # read annotations
-    annotation_folder = '/home/harrisonford/Downloads/'
+    annotation_folder = '/home/ssur-rtx01/Documents/MyBabyBrain/Annotations/'
     video_list_normal = ['000345']
     video_list_abnormal = ['000845']
-    to_load_list_normal = [annotation_folder + an_id + '_coco.json' for an_id in video_list_normal]
-    to_load_list_abnormal = [annotation_folder + an_id + '_coco.json' for an_id in video_list_abnormal]
+    to_load_list_normal = [annotation_folder + an_id + '_full_coco.json' for an_id in video_list_normal]
+    to_load_list_abnormal = [annotation_folder + an_id + '_full_coco.json' for an_id in video_list_abnormal]
     annotations_normal = [load_annotations(annotation) for annotation in to_load_list_normal]
     annotations_abnormal = [load_annotations(annotation) for annotation in to_load_list_abnormal]
 
@@ -29,10 +29,12 @@ if __name__ == '__main__':
 
     # extract image frames from videos to process
     # TODO: frame id from getvalue is not perfectly correct
-    video_folder = '/home/harrisonford/Videos/babybrain-converted/'
-    image_container = [get_frames_from(video_folder + video + '.MP4', frame_list, threshold=1) for (video, frame_list)
-                       in zip(video_list_normal + video_list_abnormal, frame_ids_normal + frame_ids_abnormal)]
-
+    video_folder = '/home/ssur-rtx01/Documents/MyBabyBrain/Videos/'
+    image_container_normal = [get_frames_from(video_folder + video + '.MP4', frame_list, threshold=1)
+                              for (video, frame_list) in zip(video_list_normal, frame_ids_normal)]
+    image_container_abnormal = [get_frames_from(video_folder + video + '.MP4', frame_list, threshold=1)
+                                for (video, frame_list) in zip(video_list_abnormal, frame_ids_abnormal)]
+    image_container = image_container_normal + image_container_abnormal
     # calculate tracking for each image in container
     pose_model = PoseEstimationModel()
     id_list = []
@@ -42,15 +44,15 @@ if __name__ == '__main__':
             id_list.append(an_id)
 
     # save tracking in coco format
-    output_json = '/home/harrisonford/Downloads/video_pose_model_coco.json'
+    output_json = '/home/ssur-rtx01/Documents/MyBabyBrain/video_pose_model_coco.json'
     pose_model.save_as_coco_result(output_json, id_vector=id_list)
 
     # calculate curve performance
     distances_normal, visible_normal = \
-        compute_error(output_json, annotation_folder + video_list_normal[0] + '_coco.json', normalize='body')
+        compute_error(output_json, annotation_folder + video_list_normal[0] + '_full_coco.json', normalize='body')
 
     distances_abnormal, visible_abnormal = \
-        compute_error(output_json, annotation_folder + video_list_abnormal[0] + '_coco.json', normalize='body')
+        compute_error(output_json, annotation_folder + video_list_abnormal[0] + '_full_coco.json', normalize='body')
 
     # for each detection threshold count the data that falls in, for each joint
     threshold = np.array(range(101))/100
@@ -77,15 +79,22 @@ if __name__ == '__main__':
                                       for count_sample in threshold_total_count_abnormal]
     # save in a data frame so it's easier to plot
     data = []
+    left_mask = [0, 4, 5, 6, 10, 11, 12, 14, 16]
+    right_mask = [0, 1, 2, 3, 7, 8, 9, 13, 15]
+    graph_type = 'class'
     for threshold_index, a_threshold in enumerate(threshold_total_count_normal):
         for joint_index, a_value in enumerate(a_threshold):
+            if joint_index not in right_mask and graph_type == 'joint':
+                continue
             data.append([threshold[threshold_index], joint_index, a_value, 'normal'])
     for threshold_index, a_threshold in enumerate(threshold_total_count_abnormal):
         for joint_index, a_value in enumerate(a_threshold):
+            if joint_index not in right_mask and graph_type == 'joint':
+                continue
             data.append([threshold[threshold_index], joint_index, a_value, 'abnormal'])
     detect_df = pd.DataFrame(data=data, columns=['threshold', 'joint', 'ratio', 'class'])
-    sns.set()
-    ax = sns.lineplot(x='threshold', y='ratio', data=detect_df, hue='class')
+    sns.set("talk")
+    ax = sns.lineplot(x='threshold', y='ratio', data=detect_df, hue=graph_type)  # use hue=joint or class to change fig
     plt.show()
 
     # now calculate COCO results
