@@ -9,7 +9,6 @@ from PoseEstimation.tf_pose.networks import model_wh, get_graph_path
 from PoseEstimation.tf_pose.estimator import TfPoseEstimator
 from scipy.misc import imread, imresize
 import numpy as np
-import argparse
 import json
 
 
@@ -153,6 +152,8 @@ class PoseEstimationModel(PoseModel):
         name = 'PoseEstimation'
         self.estimator = None
         self.target_size = None
+        self.human_dict = None
+        self.joints_names = None
         super().__init__(model_name=name, **kwargs)
         # TODO: resolve joint names
         self.generate_joint_list()
@@ -160,42 +161,36 @@ class PoseEstimationModel(PoseModel):
     def generate_joint_list(self):
         # TODO: check tf_pose/common.py for Coco vs MPII parts
         # TODO: changed this list, have to change usage inside class!
-        # ankle, knee, hip, wrist, elbow, shoulder, chin, forehead
-        self.model_config.all_joints_list = {(13, 10): 0, (12, 9): 1, (11, 8): 2, (7, 4): 3, (6, 3): 4,
-                                             (5, 2): 5, (1, ): 6, (15, 14): 7}
-        # joint_list = {13: 0, 12: 1, 11: 2, 7: 3, 6: 4, 5: 5, 1: 6, 15: 7}
-        self.model_config.all_joints_names = ['nose', 'neck', 'right_shoulder', 'right_elbow', 'right_wrist',
-                                              'left_shoulder', 'left_elbow', 'left_wrist', 'right_hip', 'right_knee',
-                                              'right_ankle', 'left_hip', 'left_knee', 'left_ankle', 'right_eye',
-                                              'left_eye', 'right_ear', 'left_ear', 'background']
+        # ankle, knee, hip, wrist, elbow, shoulder, chin, forehead - this helps with comparisons between models
+        self.human_dict = {(13, 10): 0, (12, 9): 1, (11, 8): 2, (7, 4): 3, (6, 3): 4, (5, 2): 5, (1, ): 6, (15, 14): 7}
+        self.joints_names = ['nose', 'neck', 'right_shoulder', 'right_elbow', 'right_wrist',
+                             'left_shoulder', 'left_elbow', 'left_wrist', 'right_hip', 'right_knee',
+                             'right_ankle', 'left_hip', 'left_knee', 'left_ankle', 'right_eye', 'left_eye',
+                             'right_ear', 'left_ear', 'background']
 
     def load_config(self, **kwargs):
 
         description = kwarget('description', 'tf-pose-estimation run', **kwargs)
-        config = argparse.ArgumentParser(description=description)
-
         image_path = kwarget('image_path', '', **kwargs)
-        config.add_argument('--image', type=str, default=image_path)
-
         model_type = kwarget('model_type', 'cmu', **kwargs)
-        config.add_argument('--model', type=str, default=model_type, help='use "cmu" or "mobilenet_thin"')
-
         resizing = kwarget('resize', '0x0', **kwargs)
-        config.add_argument('--resize', type=str, default=resizing,
-                            help='if provided, resize images before they are processed. default=0x0, '
-                                 'Recommends : 432x368 or 656x368 or 1312x736')
         resize_ratio = kwarget('ratio', 4.0, **kwargs)
-        config.add_argument('--resize-out-ratio', type=float, default=resize_ratio,
-                            help='if provided, resize heatmaps before they are post-processed. default=4.0')
-        self.model_config = config.parse_args()
+        config = EasyDict({
+            "description": description,
+            "image": image_path,
+            "model": model_type,
+            "resize": resizing,
+            "resize_out_ratio": resize_ratio
+        })
+        self.model_config = config
 
     def load_model(self, **kwargs):
-        self.target_size = model_wh(self.model_config.resize)  # w, h
+        self.target_size = model_wh(self.model_config['resize'])  # w, h
         if self.target_size[0] == 0 or self.target_size[1] == 0:
             target_size = (432, 368)
         else:
             target_size = self.target_size
-        self.estimator = TfPoseEstimator(get_graph_path(self.model_config.model), target_size=target_size)
+        self.estimator = TfPoseEstimator(get_graph_path(self.model_config['model']), target_size=target_size)
 
     def run_model_once(self, input_path):
         # TODO: This read_img is a bad function to use (scipy image will be deprecated)
@@ -205,7 +200,7 @@ class PoseEstimationModel(PoseModel):
     def _run_model_once(self, an_image):
         humans = self.estimator.inference(an_image,
                                           resize_to_default=(self.target_size[0] > 0 and self.target_size[1] > 0),
-                                          upsample_size=self.model_config.resize_out_ratio)
+                                          upsample_size=self.model_config['resize_out_ratio'])
         if not humans:
             return None
 
@@ -221,15 +216,15 @@ class PoseEstimationModel(PoseModel):
 
     def calculate_confidence_once(self, an_output):
         if an_output is None:  # we return nans
-            confidence = np.empty(len(self.model_config.all_joints_list))
+            confidence = np.empty(len(self.human_dict))
             confidence[:] = np.nan
             return confidence
 
         # if there's a human we return their confidences
-        human_confidence = np.empty(len(self.model_config.all_joints_list))
+        human_confidence = np.empty(len(self.human_dict))
         human_confidence[:] = 0
         for a_part in an_output.body_parts.items():
-            real_indexes = [values for keys, values in self.model_config.all_joints_list.items() if a_part[0] in keys]
+            real_indexes = [values for keys, values in self.human_dict.items() if a_part[0] in keys]
             for an_index in real_indexes:
                 best_confidence = max(a_part[1].score, human_confidence[an_index])
                 if human_confidence[an_index] > 0 and best_confidence == a_part[1].score:  # we're storing R side
@@ -242,9 +237,9 @@ class PoseEstimationModel(PoseModel):
     def make_heatmaps_once(self, an_output):
         map_dimensions = an_output.heatmaps[:, :, 0].shape
         map_dimensions = [2 * a_dim for a_dim in map_dimensions]  # heatmaps are half the original size
-        heatmaps = [np.zeros(map_dimensions) for _ in range(len(self.model_config.all_joints_list.values()))]
+        heatmaps = [np.zeros(map_dimensions) for _ in range(len(self.human_dict.values()))]
         for a_part in an_output.body_parts.keys():
-            real_indexes = [values for keys, values in self.model_config.all_joints_list.items() if a_part in keys]
+            real_indexes = [values for keys, values in self.human_dict.items() if a_part in keys]
             for an_index in real_indexes:
                 heatmap = an_output.heatmaps[:, :, a_part]
                 # TODO: Check correct dimensions (important or not?)

@@ -14,14 +14,15 @@ def kwarget(key, default, **kwargs):
 
 # Get all frames contained in frame vector from a video file path
 # TODO: Assuming notations are sorted from min to max
-def get_frames_from(video_path, frame_vector, threshold=0, framerate=240):
+def get_frames_from(video_path, frame_vector, threshold=0, framerate=240, verbose=False):
     # create an open-cv video capture object
     image_container = []
     vidcap = cv2.VideoCapture(video_path)
     success, image = vidcap.read()
     while success:
         getvalue = vidcap.get(0)  # value in milliseconds
-        print("loading time {} from {}".format(getvalue/1000, video_path))
+        if verbose:
+            print("loading time {} from {}".format(getvalue/1000, video_path))
         if almost_in(getvalue*framerate/1000, frame_vector, threshold=threshold):
             image_container.append(image)
             frame_vector.pop(0)  # assuming value found is first value
