@@ -1,14 +1,11 @@
 import poseModels
-import os
-import sys
-from imageio import imread
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grid
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import cv2
 import warnings
-import shutil
 plt.rcParams.update({'font.size': 10})
 
 
@@ -121,12 +118,16 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
     ax.set_xticks(index)
     ax.set_xticklabels(part_names)
     fig.add_subplot(ax)
-    plt.savefig(output_file, format='png')
+    if output_file is not None:
+        plt.savefig(output_file, format='png')
     plt.close()
+    return fig
 
 
 def main(input_video, output_video, nstop=999999):
 
+    # reset the graph
+    tf.reset_default_graph()
     # create the human pose model
     model = poseModels.HumanPoseModel()
 
@@ -135,11 +136,9 @@ def main(input_video, output_video, nstop=999999):
     success, image = vidcap.read()
     # for each input/output/confidence trio we'll make a cool image, as output we'll use a _temp folder
     # we'll show a heatmap overlay on the original frame on left side plus confidence bars on the right side
-    temp_path = './_temp'
-    os.mkdir(temp_path)
     video_dimensions = (image.shape[1], image.shape[0])
-    fps = 240
-    video = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'MJPG'), fps, video_dimensions)
+    fps = 20.0
+    video = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'XVID'), fps, video_dimensions)
     while success:
         # apply model to frame
         an_output = model._run_model_once(image)
@@ -153,17 +152,20 @@ def main(input_video, output_video, nstop=999999):
         if this_frame > nstop:
             break
         print("saving frame {}".format(this_frame))
-        temp_out = "{}/{}.png".format(temp_path, this_frame)
-        save_frame_result(temp_out, image, a_heatmap_set, a_confidence_set, model.joint_names, 'HumanPose')
+        # transform fig into rgb
+        fig = save_frame_result(None, image, a_heatmap_set, a_confidence_set, model.joint_names, 'HumanPose')
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        frame = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
+        # write it
+        video.write(frame)
+        # go agane
         success, image = vidcap.read()
 
-        frame = cv2.imread(temp_out)
-        video.write(frame)
-
     # clean up
+    print("cleaning up, saving...")
     cv2.destroyAllWindows()
     video.release()
-    shutil.rmtree(temp_path)
 
 
 if __name__ == '__main__':
@@ -172,4 +174,4 @@ if __name__ == '__main__':
     # output_path = str(sys.argv[2])
     input_path = '/home/harrisonford/Videos/babybrain/000345.MP4'
     output_path = './sample.avi'
-    main(input_path, output_path, nstop=100)
+    main(input_path, output_path, nstop=50)
