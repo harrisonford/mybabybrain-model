@@ -6,6 +6,7 @@ import matplotlib.gridspec as grid
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import cv2
 import warnings
+import pandas as pd
 plt.rcParams.update({'font.size': 10})
 
 
@@ -130,15 +131,18 @@ def main(input_video, output_video, nstop=999999):
     tf.reset_default_graph()
     # create the human pose model
     model = poseModels.HumanPoseModel()
+    # container to save confidences
+    confidences = []
 
     # extract each frame
     vidcap = cv2.VideoCapture(input_video)
     success, image = vidcap.read()
     # for each input/output/confidence trio we'll make a cool image, as output we'll use a _temp folder
     # we'll show a heatmap overlay on the original frame on left side plus confidence bars on the right side
-    video_dimensions = (image.shape[1], image.shape[0])
-    fps = 20.0
-    video = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'XVID'), fps, video_dimensions)
+    # video_dimensions = (image.shape[1], image.shape[0])
+    video_dimensions = (1200, 800)
+    fps = 240.0
+    video = cv2.VideoWriter(output_video, cv2.VideoWriter_fourcc(*'MJPG'), fps, video_dimensions)
     while success:
         # apply model to frame
         an_output = model._run_model_once(image)
@@ -147,6 +151,7 @@ def main(input_video, output_video, nstop=999999):
         a_heatmap_set = model.make_heatmaps_once(an_output)
         # calculate confidence set
         a_confidence_set = model.calculate_confidence_once(an_output)
+        confidences.append(a_confidence_set)
 
         this_frame = vidcap.get(0)
         if this_frame > nstop:
@@ -156,9 +161,12 @@ def main(input_video, output_video, nstop=999999):
         fig = save_frame_result(None, image, a_heatmap_set, a_confidence_set, model.joint_names, 'HumanPose')
         canvas = FigureCanvas(fig)
         canvas.draw()
-        frame = np.fromstring(canvas.tostring_rgb(), dtype='uint8')
-        # write it
-        video.write(frame)
+        canvas_str = canvas.tostring_rgb()
+        frame = np.fromstring(canvas_str, dtype=np.uint8, sep='')
+        # TODO: video is not saving because it has to be opencv image format
+        frame = frame.reshape(canvas.get_width_height()[::-1] + (3, ))
+        # write it in BGR format
+        video.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         # go agane
         success, image = vidcap.read()
 
@@ -166,6 +174,9 @@ def main(input_video, output_video, nstop=999999):
     print("cleaning up, saving...")
     cv2.destroyAllWindows()
     video.release()
+    # save confidences
+    df = pd.DataFrame(confidences, columns=['1', '2', '3', '4', '5', '6', '7', '8'])
+    df.to_csv('./confidences.csv')
 
 
 if __name__ == '__main__':
@@ -174,4 +185,4 @@ if __name__ == '__main__':
     # output_path = str(sys.argv[2])
     input_path = '/home/harrisonford/Videos/babybrain/000345.MP4'
     output_path = './sample.avi'
-    main(input_path, output_path, nstop=50)
+    main(input_path, output_path, nstop=240*10)
