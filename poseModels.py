@@ -154,6 +154,7 @@ class PoseEstimationModel(PoseModel):
         self.target_size = None
         self.human_dict = None
         self.joints_names = None
+        self.joint_names = None
         super().__init__(model_name=name, **kwargs)
         # TODO: resolve joint names
         self.generate_joint_list()
@@ -167,6 +168,8 @@ class PoseEstimationModel(PoseModel):
                              'left_shoulder', 'left_elbow', 'left_wrist', 'right_hip', 'right_knee',
                              'right_ankle', 'left_hip', 'left_knee', 'left_ankle', 'right_eye', 'left_eye',
                              'right_ear', 'left_ear', 'background']
+        # TODO: we save this only to be comparable with HumanPose
+        self.joint_names = ['ankle', 'knee', 'hip', 'wrist', 'elbow', 'shoulder', 'chin', 'forehead']
 
     def load_config(self, **kwargs):
 

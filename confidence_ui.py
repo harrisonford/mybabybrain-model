@@ -81,7 +81,7 @@ def save_frame_result_dual(output_file, image_matrix, dual_heatmaps, dual_confid
     plt.close()
 
 
-def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_names, model_name):
+def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_names, model_name, errors=None):
 
     # create plot canvas
     fig = plt.figure(figsize=(12, 8))
@@ -90,7 +90,11 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
 
     # plot heatmaps in first grid
     left_canvas = grid.GridSpecFromSubplotSpec(4, 2, subplot_spec=outer_canvas[0])
-    for num, a_heatmap in enumerate(heatmaps):
+    for num in range(len(confidences)):
+        if heatmaps is None:
+            a_heatmap = None
+        else:
+            a_heatmap = heatmaps[num]
         ax = plt.Subplot(fig, left_canvas[num])
         ax.set_title(part_names[num] + " = {0:.2f}".format(confidences[num]))
         ax.axis('off')
@@ -111,7 +115,7 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
     opacity = 0.4
     n_groups = len(confidences)
     index = np.arange(n_groups)
-    ax.bar(index, np.absolute(confidences), bar_width, alpha=opacity, color='b')  # TODO: np.abs because L-R on PoseEst
+    ax.bar(index, np.abs(confidences), bar_width, alpha=opacity, color='b', yerr=errors)  # TODO: PoseEst more conf
     ax.set_ylim((0, 1))
     ax.set_xlabel('Body-Part')
     ax.set_ylabel('Confidence Value')
@@ -125,19 +129,22 @@ def save_frame_result(output_file, image_matrix, heatmaps, confidences, part_nam
     return fig
 
 
-def main(input_video, output_video, nstop=999999):
+def main(input_video, output_video, nstop=999999, model_name='HumanPose'):
 
     # reset the graph
     tf.reset_default_graph()
     # create the human pose model
-    model = poseModels.HumanPoseModel()
+    if model_name == 'PoseEst':
+        model = poseModels.PoseEstimationModel()
+    else:
+        model = poseModels.HumanPoseModel()
     # container to save confidences
     confidences = []
 
     # extract each frame
     vidcap = cv2.VideoCapture(input_video)
     success, image = vidcap.read()
-    # for each input/output/confidence trio we'll make a cool image, as output we'll use a _temp folder
+    # for each input/output/confidence trio we'll make a cool image
     # we'll show a heatmap overlay on the original frame on left side plus confidence bars on the right side
     # video_dimensions = (image.shape[1], image.shape[0])
     video_dimensions = (1200, 800)
@@ -158,7 +165,7 @@ def main(input_video, output_video, nstop=999999):
             break
         print("saving frame {}".format(this_frame))
         # transform fig into rgb
-        fig = save_frame_result(None, image, a_heatmap_set, a_confidence_set, model.joint_names, 'HumanPose')
+        fig = save_frame_result(None, image, a_heatmap_set, a_confidence_set, model.joint_names, model_name)
         canvas = FigureCanvas(fig)
         canvas.draw()
         canvas_str = canvas.tostring_rgb()
@@ -177,6 +184,11 @@ def main(input_video, output_video, nstop=999999):
     # save confidences
     df = pd.DataFrame(confidences, columns=['1', '2', '3', '4', '5', '6', '7', '8'])
     df.to_csv('./confidences.csv')
+    # make final image
+    final_image_output = './final_image.png'
+    confidence_matrix = np.array(confidences)
+    save_frame_result(final_image_output, image, None, np.nanmean(confidence_matrix, axis=0), model.joint_names,
+                      model_name, errors=np.nanstd(confidence_matrix, axis=0))
 
 
 if __name__ == '__main__':
@@ -185,4 +197,4 @@ if __name__ == '__main__':
     # output_path = str(sys.argv[2])
     input_path = '/home/harrisonford/Videos/babybrain/000345.MP4'
     output_path = './sample.avi'
-    main(input_path, output_path, nstop=240*10)
+    main(input_path, output_path, nstop=240*1, model_name='PoseEst')
