@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
         if not success:
             Warning("{} video file failed to process frame {}".format(file_in, a_frame))
-            break
+            continue
 
         this_time = video_capture.get(0)  # gets time in ms
         print("processing frame: {}; {}[s]".format(a_frame, this_time/1000))
@@ -69,11 +69,11 @@ if __name__ == '__main__':
     data = dict(file_name=file_in, model_name=model.model_name, processed_frames=frame_list,
                 confidences=confidence_list)
     # TODO: Working on final step classification will attach a dummy model for now
-    # save_as_json(data, file_out)
+    save_as_json(data, file_out + '.json')
 
     # classify subject data
     intervals = classify_subject_dummy(frame_count)
 
     # save intervals as DataFrame
     df = pd.DataFrame(intervals, columns=['T0', 'Tf'])
-    df.to_csv(file_out)
+    df.to_csv(file_out + '.csv')
