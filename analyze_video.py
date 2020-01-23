@@ -21,11 +21,11 @@ def classify_subject_dummy(total_frames):
     durations = [total_duration*0.1, total_duration*0.15]
     dummy_intervals = [[starts[0], starts[0]+durations[0]],
                        [starts[1], starts[1]+durations[1]]]
-    return pd.DataFrame(dummy_intervals, columns=['T0', 'T1'])
+    return pd.DataFrame(dummy_intervals, columns=['T0', 'Tf'])
 
 
 def classify_subject_confidences(my_pickle_model, _confidence_list, _frame_list,
-                                 window_size_seconds=10, fps=240, fskip=30):
+                                 window_size_seconds=10, fps=240, fskip=30, model_type=None):
     if not my_pickle_model:  # no model, we just use a dummy
         return classify_subject_dummy(np.max(_frame_list))
 
@@ -36,13 +36,13 @@ def classify_subject_confidences(my_pickle_model, _confidence_list, _frame_list,
     clean_confidence_list = [a_sample for a_sample in _confidence_list if not np.any(np.isnan(a_sample))]
     predictions = my_pickle_model.predict(clean_confidence_list)
 
-    # compress into abnormal windows
-    # we will store the windows into a simple format t0, t1 for desired windows
+    # compress into abnormal or gm windows
+    # we will store the windows into a simple format t0, tf for desired windows
     compressed_windows = []
     for index in range(0, len(predictions), window_size_data):
         sub_sample = predictions[index:index + window_size_data - 1]
         score = np.nanmean(sub_sample)
-        if score < 0.5:  # then we have an abnormal case
+        if (model_type == 'normal' and score < 0.5) or (model_type == 'gm' and score > 0.5):
             t0 = _frame_list[index] / fps
             t1 = _frame_list[index] / fps + window_size_seconds
             compressed_windows.append([t0, t1])
@@ -63,7 +63,7 @@ def classify_subject_confidences(my_pickle_model, _confidence_list, _frame_list,
             stored_t1 = t1
 
     # now we make a DataFrame to save T0 and T1 and return it
-    return pd.DataFrame(compressed_windows_extended, columns=['T0', 'T1'])
+    return pd.DataFrame(compressed_windows_extended, columns=['T0', 'Tf'])
 
 
 if __name__ == '__main__':
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     ap.add_argument("--in", type=str, default=None, help="full path to input video file")
     ap.add_argument("--out", type=str, default=None, help="full path to output video file")
     ap.add_argument("--fskip", type=int, default=30, help="set frame jump for each processed")
-    ap.add_argument("--model", type=str, default=None, help="full path to final classification model")
+    ap.add_argument("--model", type=str, default=None, help="partial paths to classification models")
     args = vars(ap.parse_args())
 
     file_in = args['in']
@@ -81,8 +81,9 @@ if __name__ == '__main__':
 
     # prepare models
     tf.reset_default_graph()
-    model = HumanPoseModel()
-    class_model = pickle.load(open(model_path, 'rb'))
+    tracking_model = HumanPoseModel()
+    abnormal_model = pickle.load(open(model_path + '/classification_model_abnormal.pkl', 'rb'))
+    gm_model = pickle.load(open(model_path + '/classification_model_gm.pkl', 'rb'))
 
     # container to save confidence values
     confidences = []
@@ -105,20 +106,40 @@ if __name__ == '__main__':
 
         this_time = video_capture.get(0)  # gets time in ms
         print("processing frame: {}; {}[s]".format(a_frame, this_time/1000))
-        model_output = model._run_model_once(an_image)
-        confidence_output = model.calculate_confidence_once(model_output)
+        model_output = tracking_model._run_model_once(an_image)
+        confidence_output = tracking_model.calculate_confidence_once(model_output)
         confidences.append(confidence_output)
 
     # prepare to save in a json file
     frame_list = np.array(processed_frames).tolist()
     confidence_list = np.array(confidences).tolist()
-    data = dict(file_name=file_in, model_name=model.model_name, processed_frames=frame_list,
+    data = dict(file_name=file_in, model_name=tracking_model.model_name, processed_frames=frame_list,
                 confidences=confidence_list)
     # save the model data just in case
     # save_as_json(data, file_out + '.json')
 
     # classify subject data
-    intervals_df = classify_subject_confidences(class_model, confidence_list, frame_list)
+    intervals_gm = classify_subject_confidences(gm_model, confidence_list, frame_list, model_type='gm')
+    intervals_abnormal = classify_subject_confidences(abnormal_model, confidence_list, frame_list, model_type='normal')
+    intervals_gm.to_csv(file_out + '_gm.csv')
+    intervals_abnormal.to_csv(file_out + '_abnormal.csv')
 
-    # save intervals as DataFrame
-    intervals_df.to_csv(file_out + '.csv')
+    # print a message with the proportion of data marked as positive
+    deltas_gm = intervals_gm['Tf'] - intervals_gm['T0']
+    deltas_abnormal = intervals_abnormal['Tf'] - intervals_abnormal['T0']
+    ratio_gm = np.sum(deltas_gm)/frame_list[-1]
+    ratio_abnormal = np.sum(deltas_abnormal)/frame_list[-1]
+
+    print("{}% of classified data as General Movement".format(100*ratio_gm))
+    if ratio_gm == 0:  # we return to the dummy model, sorry Francisco :'(
+        Warning('Because GM cannot be detected system will return to dummy model')
+        intervals_gm = classify_subject_dummy(frame_list[-1])
+        intervals_gm.to_csv(file_out + '_gm.csv')
+
+    print("{}% of classified data as Abnormal".format(100 * ratio_abnormal))
+    if 0 < ratio_abnormal < 0.1:
+        print("Partially abnormal subject")
+    elif ratio_abnormal >= 0.1:
+        print("Highly abnormal subject")
+    else:
+        print("Normal subject")
