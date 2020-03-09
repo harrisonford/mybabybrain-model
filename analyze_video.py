@@ -71,19 +71,17 @@ if __name__ == '__main__':
     ap.add_argument("--in", type=str, default=None, help="full path to input video file")
     ap.add_argument("--out", type=str, default=None, help="full path to output video file")
     ap.add_argument("--fskip", type=int, default=30, help="set frame jump for each processed")
-    ap.add_argument("--model", type=str, default=None, help="partial paths to classification models")
     args = vars(ap.parse_args())
 
     file_in = args['in']
     file_out = args['out']
     fskip = args['fskip']
-    model_path = args['model']
 
     # prepare models
     tf.reset_default_graph()
     tracking_model = HumanPoseModel()
-    abnormal_model = pickle.load(open(model_path + '/classification_model_abnormal.pkl', 'rb'))
-    gm_model = pickle.load(open(model_path + '/classification_model_gm.pkl', 'rb'))
+    abnormal_model = pickle.load(open('./ClassModels/classification_model_abnormal.pkl', 'rb'))
+    gm_model = pickle.load(open('./ClassModels/classification_model_gm.pkl', 'rb'))
 
     # container to save confidence values
     confidences = []
